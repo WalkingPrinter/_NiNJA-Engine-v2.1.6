@@ -1,0 +1,1298 @@
+#include "TitleHooks.h"
+//#include "Sounds.h"
+
+Detour<VOID> R_EndFrame_Detour;
+Detour<VOID> CL_CreateNewCommands_Detour;
+Detour<DWORD> XamInputGetState_Detour;
+Detour<VOID> BG_UpdatePlayerDObj_Detour;
+Detour<VOID> CG_CompassDrawPlayerMap_Detour;
+Detour<VOID> CG_EntityEvent_Detour;
+Detour<VOID> CL_SendCommand_Detour;
+
+TitleHooks *pThis; // A pointer to our current TitleHooks object
+BOOL bFirstRun = TRUE;
+bool bAutoShootFlip = false;
+DWORD dwScoreEndTime = 0;
+//Sounds sounds;
+
+TitleHooks::TitleHooks() {
+	bInitialized = FALSE;
+}
+
+TitleHooks::~TitleHooks() {
+}
+
+/* CL_CreateNewCommands hook and all associated functions */
+#pragma region CL_CreateNewCommands hook
+VOID CL_CreateNewCommands_Pre() {
+	// If our process is shutting down, skip the detour entirely
+	if (NiNJA.bTerminateProcess || NiNJA.bShutdownCheats || NiNJA.bExternUnload) {
+		return;
+	}
+
+	// Grab the current tick count, we'll use this so we can cache data for clients and only update it if our server time has progressed
+	CG::dwLastCmdTick = GetTickCount();
+	if (CG::bInGame && CG::bLobbyInitialized) {
+		bool bAnyVisible = false, bAnyWallbangable = false;
+		// Loop through all our entities and cache info required for all our mods
+		for (DWORD i = 0; i < __MAXENTITIES__; i++) {
+			if (!CG::bInGame || NiNJA.bTerminateProcess || NiNJA.bShutdownCheats || NiNJA.bExternUnload) {
+				return;
+			}
+
+			// Just grab entity every frame.. this is required in BO3 and it doesn't hurt performance to do it on any of the other ones
+			CG::cEntities.List[i].pCentity = GameFuncs::Get_CEntity_t(i);
+
+			// Clientinfo, on the other hand, is populated by a hook on most games. So only assign to it if it's NULL
+			if (CG::cEntities.List[i].pClientInfo == NULL) {
+				CG::cEntities.List[i].pClientInfo = GameFuncs::Get_ClientInfo_t(i);
+			}
+
+		jStart:
+			// Check if the entity is of a valid entityType
+			CG::cEntities.List[i].sEntType = GameFuncs::GetEntityType(i);
+			if (!GameFuncs::IsEntValid(i)) {
+				if (CG::cEntities.List[i].bValid) {
+					//DbgPrintE("Client %i is no longer of valid entityType!", i);
+					CG::cEntities.List[i].Reset(TRUE, i);
+				}
+				continue;
+			}
+
+			// Check if the entity is living
+			CG::cEntities.List[i].bAlive = GameFuncs::IsEntLiving(i);
+			if (!CG::cEntities.List[i].bAlive) {
+				if (CG::cEntities.List[i].bValid) {
+					//DbgPrintE("Client %i is no longer alive!", i);
+					CG::cEntities.List[i].bValid = false;
+				}
+				continue;
+			}
+
+			// Grab their team, and check if they're friendly or enemy
+			CG::cEntities.List[i].sTeam = GameFuncs::GetEntityTeam(i);
+			CG::cEntities.List[i].bEnemy = GameFuncs::IsEntEnemy(i);
+
+			// If we got this far and we aren't already valid, the entity just spawned in or just joined the game
+			if (!CG::cEntities.List[i].bValid) {
+				bool bPlayer = CG::cEntities.List[i].bPlayer, bAI = CG::cEntities.List[i].bAI;
+				SHORT sEntType = CG::cEntities.List[i].sEntType;
+
+				// Reset the entity to get rid of any old info
+				CG::cEntities.List[i].Reset(FALSE);
+
+				// Restore our entity info so we can alloc an extendedEntity if needed
+				CG::cEntities.List[i].bPlayer = bPlayer;
+				CG::cEntities.List[i].bAI = bAI;
+				CG::cEntities.List[i].sEntType = sEntType;
+
+				// If they're a player or AI, alloc an extendedEntity if it doesn't already exist
+				if (CG::cEntities.List[i].bPlayer || CG::cEntities.List[i].bAI) {
+					DbgPrintE("%s %i just spawned in! (CEntity: %X, ClientInfo %X)", CG::cEntities.List[i].bEnemy ? "Enemy" : "Teammate", i, CG::cEntities.List[i].pCentity, CG::cEntities.List[i].pClientInfo);
+					if (!CG::cEntities.List[i].pExt) {
+						if (!CG::cEntities.List[i].AllocExtendedEntity()) {
+							DbgPrintE("Failed to alloc extendedEntity for client %i!", i);
+						}
+					}
+					if (CG::cEntities.List[i].pExt) {
+						CG::cEntities.List[i].bValid = true;
+					}
+				}
+				else {
+					//if (CG::cEntities.List[i].sEntType == decryptDWORD(Not(NiNJA.cPatches)->CoD.ET_HELICOPTER)) {
+					//	DbgPrintE("Heli %i spawned! cEntity: %X", i, CG::cEntities.List[i].pCentity);
+					//}
+					CG::cEntities.List[i].bValid = true;
+				}
+				// Finally, make sure they're a valid entity one last time before grabbing their info. This only happens once per spawn, per player.
+				if (CG::cEntities.List[i].bValid) {
+					goto jStart;
+				}
+			}
+
+			if (CG::cEntities.List[i].bValid) {
+				// Get the entities base location (from cEntity)
+				CG::cEntities.List[i].vLocation = GameFuncs::GetEntityLocation(i);
+
+				// Grab the entities current viewangles, after backing up their old viewangles
+				CG::cEntities.List[i].vOldAngles = CG::cEntities.List[i].vAngles;
+				CG::cEntities.List[i].vAngles = GameFuncs::GetEntityViewAngles(i);
+
+				/*FLOAT fDelta = GetAngleDelta(CG::cEntities.List[i].vAngles.y, CG::cEntities.List[i].vOldAngles.y);
+				if (fDelta != 0) {
+					DbgPrintE("Angle Delta: %f", fDelta);
+				}*/
+
+				if (i != CG::iLocalClient) {
+					// Get the distance between the client and us
+					CG::cEntities.List[i].fDistance = Get3dDistance(CG::cEntities.List[CG::iLocalClient].vLocation, CG::cEntities.List[i].vLocation);
+				}
+
+				// Player and AI entities, these entities have an EntityExtention 
+				if (CG::cEntities.List[i].pExt) {
+					// Grab a handle to their current dobj so we can use it to grab their xmodel
+					CG::cEntities.List[i].pExt->pDObj = GameFuncs::Get_ClientDObj(i);
+
+					if (CG::cEntities.List[i].pExt->pDObj) {
+						// Grab the entities xmodel
+						if (CG::cEntities.List[i].pExt->pXModel == NULL) {
+							CG::cEntities.List[i].pExt->pXModel = GameFuncs::GetXModelForDObj(CG::cEntities.List[i].pExt->pDObj);
+							DbgPrintE("XModel for %s: %X", CG::cEntities.List[i].pExt->pRealName, CG::cEntities.List[i].pExt->pXModel);
+						}
+
+						// Grab the entities weapon
+						CG::cEntities.List[i].pExt->dwCurrentWeapon = GameFuncs::GetEntityWeapon(i, TRUE);
+						CG::cEntities.List[i].pExt->dwSecondaryWeapon = GameFuncs::GetEntityWeapon(i, FALSE);
+
+						// Check if we're using a shield
+						if (i == CG::iLocalClient) {
+							CG::cEntities.List[i].pExt->bPrimaryShield = GameFuncs::IsEntUsingShield(i, CG::cEntities.List[i].pExt->dwCurrentWeapon);
+						}
+
+						if (CG::cEntities.List[i].bEnemy) {
+							// Check if the enemy is using a shield
+							CG::cEntities.List[i].pExt->bPrimaryShield = GameFuncs::IsEntUsingShield(i, CG::cEntities.List[i].pExt->dwCurrentWeapon);
+							CG::cEntities.List[i].pExt->bSecondaryShield = GameFuncs::IsEntUsingShield(i, CG::cEntities.List[i].pExt->dwSecondaryWeapon);
+
+							// If they have a shield, read info about it for our shield check and esp
+							if (CG::cEntities.List[i].pExt->bPrimaryShield || CG::cEntities.List[i].pExt->bSecondaryShield) {
+								CG::cEntities.List[i].pExt->oShieldInfo = GameFuncs::GetShieldInfo(i);
+							}
+
+							// If they're a normal player
+							if (i < __MAXCLIENTS__) {
+								CG::cEntities.List[i].pExt->bTopPlayer = GameFuncs::IsClientTopPlayer(i);
+
+								// Grab info about their kills and death so we can calculate who the most deadly players are
+								sScoreboardInfo cScore = GameFuncs::GetScoreboardInfo(i);
+
+								// Save the score info for use in other places
+								CG::cEntities.List[i].pExt->cScore = cScore;
+
+								// For every 2 assists, add a kill to the players score
+								cScore.dwKills += cScore.dwAssists > 1 ? (cScore.dwAssists / 2) : 0;
+
+								// Calculate their kd ratio to use as a multiplier in our threat calculation
+								int iThreatMultiplier = cScore.dwDeaths > 0 ? cScore.dwKills / cScore.dwDeaths : cScore.dwKills;
+
+								// Multiply our threat multiplier by the total number of kills they have, to get our final threat assessment
+								CG::cEntities.List[i].pExt->iThreatAssessment = iThreatMultiplier * cScore.dwKills;
+							}
+						}
+
+						// Read the position of all their tags for bone esp and aimbot
+						vec3_t mins(999999.0f, 999999.0f, 999999.0f), maxes(-999999.0f, -999999.0f, -999999.0f);
+						for (DWORD t = 0; t < TAG_SIZE; t++) {
+							// Exit our loop as quickly as possible if we leave the game or are shutting down our cheats
+							if (!CG::bInGame || NiNJA.bTerminateProcess || NiNJA.bShutdownCheats || NiNJA.bExternUnload) {
+								return;
+							}
+							// Grab the position of the tag
+							GameFuncs::GetTagPosition(t, i, &CG::cEntities.List[i].pExt->cTags[t].vPos, TRUE);
+
+							// Helmet is a bit too high up... subtract a bit so its more accurate :)
+							if (t == TAG_HELMET) {
+								CG::cEntities.List[i].pExt->cTags[t].vPos.z -= 1.0f;
+							}
+							// Set our mins and maxes for our bounding box later
+							mins.SetIfLessThan(CG::cEntities.List[i].pExt->cTags[t].vPos);
+							maxes.SetIfGreaterThan(CG::cEntities.List[i].pExt->cTags[t].vPos);
+						}
+						// Store the mins and maxes for our bounding box calculation in the ESP class
+						CG::cEntities.List[i].pExt->vMins = mins;
+						CG::cEntities.List[i].pExt->vMaxes = maxes;
+
+						if (CG::cEntities.List[i].bPlayer) {
+							// Grab the entities stance
+							CG::cEntities.List[i].pExt->dwStance = GameFuncs::GetEntityStance(i);
+						}
+						else {
+
+						}
+
+						// If it's us
+						if (i == CG::iLocalClient) {
+							//Check if we're dual wielding based off our current weapon
+							CG::cEntities.List[i].pExt->bWeaponDualWield = GameFuncs::IsUsingDualWieldWeapon(i);
+
+							// Grab our weapons clip size, and ammo count
+							CG::cEntities.List[i].pExt->sWeaponClipSize = GameFuncs::GetWeaponClipSize(i);
+							CG::cEntities.List[i].pExt->sAmmoRightHand = GameFuncs::GetWeaponAmmo(i, false);
+							// Only grab ammo for our left gun if we're dual wielding
+							if (CG::cEntities.List[i].pExt->bWeaponDualWield) {
+								CG::cEntities.List[i].pExt->sAmmoLeftHand = GameFuncs::GetWeaponAmmo(i, true);
+							}
+						}
+						else {
+							// Check if the entity is invisible
+							CG::cEntities.List[i].bInvisible = GameFuncs::IsEntInvisible(i);
+
+							// Only run visibility and wallbang checks on enemies.
+							if (CG::cEntities.List[i].bEnemy) {
+								// Check if they're looking at us
+								CG::cEntities.List[i].pExt->sLookingAtBoneIndex = GameFuncs::IsEntLookingAtMe(i);
+
+								// Check if the enemy is killable
+								CG::cEntities.List[i].bKillable = GameFuncs::IsEntKillable(i);
+
+								// Check if any of their bones were visible
+								CG::cEntities.List[i].pExt->bVisible = GameFuncs::IsEntVisible(i);
+
+								// Set our anyVisible flag so we can determine whether or not to autoshoot
+								if (CG::cEntities.List[i].pExt->bVisible) {
+									if (((!CG::cEntities.List[i].bPlayer && !CG::bIsMultiplayer) || CG::bIsMultiplayer) && CG::cEntities.List[i].bKillable) {
+										bAnyVisible = true;
+									}
+								}
+
+								// If they weren't visible, check if they're wallbangable
+								if (!CG::cEntities.List[i].pExt->bVisible) {
+									if (CG::bAutowall) {
+										CG::cEntities.List[i].pExt->bWallbangable = Autowall::IsEntWallbangable(i);
+										if (CG::cEntities.List[i].pExt->bWallbangable) {
+											if (((!CG::cEntities.List[i].bPlayer && !CG::bIsMultiplayer) || CG::bIsMultiplayer) && CG::cEntities.List[i].bKillable) {
+												bAnyWallbangable = true;
+											}
+										}
+									}
+									else if (CG::cEntities.List[i].pExt->bWallbangable) {
+										CG::cEntities.List[i].pExt->bWallbangable = false;
+									}
+								}
+							}
+						}
+					}
+				}
+				// Non-player entities
+				else {
+
+				}
+			}
+		}
+		ESP::bAnyEnemyVisible = bAnyVisible;
+		ESP::bAnyEnemyWallbangable = bAnyWallbangable;
+
+		vector<int> cTopPlayers;
+		// Cycle through all clients 3 times, to determine the top 3 clients to prioritize over all others
+		for (DWORD c = 0; c < 2; c++) {
+			int iCurrentClient = -1;
+			int iCurrentTop = -1;
+			// Loop through all clients
+			for (DWORD i = 0; i < __MAXCLIENTS__; i++) {
+				bool bContinue = false;
+				// Skip players who have already been marked as a higher rank
+				for (DWORD t = 0; t < cTopPlayers.size(); t++) {
+					if (cTopPlayers[t] == i) {
+						bContinue = true;
+						continue;
+					}
+				}
+				if (bContinue) {
+					continue;
+				}
+				// Make sure they have a valid pExt
+				if (CG::cEntities.List[i].pExt && CG::cEntities.List[i].bEnemy) {
+					// Only allow them to be considered a "top player" if they have a positive kd, if they are preferred in the menu, or if we haven't yet selected the top player.
+					FLOAT fKD = CG::cEntities.List[i].pExt->cScore.dwDeaths > 0 ? CG::cEntities.List[i].pExt->cScore.dwKills / CG::cEntities.List[i].pExt->cScore.dwDeaths : CG::cEntities.List[i].pExt->cScore.dwKills;
+					if (fKD >= 1.0 || CG::cEntities.List[i].pExt->bPreferred || CG::cEntities.List[i].pExt->bHasKilledMe || c == 0) {
+						// Check if their threat assessment is higher than the current top
+						if (CG::cEntities.List[i].pExt->iThreatAssessment > iCurrentTop) {
+							// If it is, store it 
+							iCurrentTop = CG::cEntities.List[i].pExt->iThreatAssessment;
+							iCurrentClient = i;
+						}
+					}
+				}
+			}
+			// Store this client at the end of the list of top players
+			cTopPlayers.push_back(iCurrentClient);
+		}
+		// Finally, save it to our global top players vector so we can use it from everywhere :)
+		CG::cTopPlayers = cTopPlayers;
+
+		// Find out if we're looking at any entities
+		CG::iLookingAtEntity = GameFuncs::IsLookingAtEntity();
+
+		// Run our aimbot logic, if our aimbot isnt disabled and we're not using silent aim
+		if (CG::dwAimbotType != AIM_TYPE_OFF && (CG::dwAimbotType != AIM_TYPE_SILENT || CG::bInKillstreak)) {
+			Aimbot::Rape();
+		}
+
+		// Update our scores from the server every 2.5 seconds... this only happens if the game isn't requesting the scores its self.
+		if (dwScoreEndTime < GetTickCount()) {
+			// Update our scores from the server
+			GameFuncs::AddReliableCommand(__SCORECMD__);
+		}
+	}
+}
+
+VOID CL_CreateNewCommands_Post() {
+	// If our process is shutting down, skip the detour entirely
+	if (NiNJA.bTerminateProcess || NiNJA.bShutdownCheats || NiNJA.bExternUnload) {
+		return;
+	}
+
+	// If we're ingame and the lobby is initialized
+	if (CG::bInGame && CG::bLobbyInitialized) {
+		// Add a new usercmd for our hax :D
+		UserCmd::AddUserCommand();
+
+		//// Only write our firing flags to the usercmd if our current weapon has a clip
+		//if (CG::cEntities.List[CG::iLocalClient].pExt->sWeaponClipSize > 0) {
+			// Set our firing flag if we are firing or should autoshoot
+			if (CG::cButtons.bFiring) {
+			#if defined(MW2) || defined(MW3) || defined(GHOSTS) || defined(AW)
+				UserCmd::SetInAttack(UserCmd::GetUserCmd(UserCmd::GetCurrentUserCmdNum() - 1), true);
+			#else
+				UserCmd::SetInAttack(UserCmd::GetUserCmd(UserCmd::GetCurrentUserCmdNum()), true);
+			#endif
+			}
+			if (CG::cButtons.bFiringSecondary) {
+			#if defined(MW2) || defined(MW3) || defined(GHOSTS) || defined(AW)
+				UserCmd::SetIsAiming(UserCmd::GetUserCmd(UserCmd::GetCurrentUserCmdNum() - 1), true);
+			#else
+				UserCmd::SetIsAiming(UserCmd::GetUserCmd(UserCmd::GetCurrentUserCmdNum()), true);
+			#endif
+			}
+		//}
+		
+	#if defined(MW1) || defined(GHOSTS) || defined(AW) || defined(BO3)
+		// Run our aimbot logic, if our aimbot isnt disabled and we're using silent aim
+		if (CG::dwAimbotType != AIM_TYPE_OFF && CG::dwAimbotType == AIM_TYPE_SILENT && !CG::bInKillstreak) {
+			Aimbot::Rape();
+		}
+
+		// Apply our nospread angles, if we're firing
+		if (CG::bNoSpread) {
+			NoSpread::Apply();
+		}
+	#endif
+	}
+}
+
+VOID CL_CreateNewCommands_Hook(DWORD dwLocalClient) {
+	// Call our pre-hook function
+	CL_CreateNewCommands_Pre();
+
+	// Call our original function
+	CL_CreateNewCommands_Detour.CallOriginal(dwLocalClient);
+
+	// Call our post-hook function
+	CL_CreateNewCommands_Post();
+}
+#pragma endregion
+
+/* R_EndFrame hook and all assoiciated functions */
+#pragma region R_EndFrame hook
+PCHAR pInvalidClient = NULL;
+//DWORD dwTimer = 0;
+DWORD WINAPI TitleThread(void *playInfo) {
+	while (!(NiNJA.bTerminateProcess || NiNJA.bShutdownCheats || NiNJA.bExternUnload)) {
+		if (UI::bInitialized) {
+			// Cycle through each client, and if their XUID changed regrab their user info
+			for (DWORD i = 0; i < __MAXENTITIES__; i++) {
+				// If we aren't ingame, allocate extended entities for all clients who don't already have one
+				if (!CG::bInGame) {
+					if (i < __MAXCLIENTS__ || CG::cEntities.List[i].bPlayer || CG::cEntities.List[i].bAI) {
+						if (!CG::cEntities.List[i].pExt) {
+							if (!CG::cEntities.List[i].AllocExtendedEntity()) {
+								DbgPrint("Failed to alloc extendedEntity for client %i!", i);
+							}
+						}
+					}
+				}
+				if (CG::cEntities.List[i].pExt) {
+					// Grab their netinfo address
+					CG::cEntities.List[i].pExt->pNetInfo = GameFuncs::Get_NetInfo(i);
+
+					// Grab their gamertag from our netinfo struct, so we can see if they have spoofed their gt
+					CG::cEntities.List[i].pExt->pName = GameFuncs::GetClientGamertagFromNetInfo(i);
+
+					// Try to read their xuid
+					QWORD tmpXuid = i < __MAXCLIENTS__ ? GameFuncs::GetClientXUID(i) : 420;
+					// Check if their xuid changed
+					if (tmpXuid != 420 && CG::cEntities.List[i].pExt->cXuid != tmpXuid) {
+						// Set the XUID in the entity struct to the new one, so we dont spam GetClientGamertag
+						CG::cEntities.List[i].pExt->cXuid = tmpXuid;
+						// If the new XUID is valid
+						if (IsXUIDValid(tmpXuid)) {
+							// Read their gamertag from their XUID
+							CG::cEntities.List[i].pExt->pRealName = GameFuncs::GetClientGamertag(i);
+							//DbgPrintE("Client %i gt was %s", i, CG::cEntities.List[i].pExt->pName);
+							UI::mManager.Menus[MENU_CLIENTS].Options.Get(i)->pDisplayName = CG::cEntities.List[i].pExt->GetName();
+						}
+						// Otherwise, set their name as NULL. If its some other ent or AI code will grab their name ingame.
+						else {
+							UI::mManager.Menus[MENU_CLIENTS].Options.Get(i)->pDisplayName = pInvalidClient;
+						}
+					}
+					else {
+						// They were a bot or some other AI, so they don't have a real name, only a fake name.
+						if (CG::bInGame && CG::cEntities.List[i].bValid) {
+							// If they don't have a real name
+							if (CG::cEntities.List[i].pExt->pRealName == NULL) {
+								// Read it from clientInfo
+								CG::cEntities.List[i].pExt->pName = GameFuncs::GetEntityName(i);
+							}
+						}
+						// Constantly update our menu display names
+						if (i < __MAXCLIENTS__) {
+							PCHAR pName = CG::cEntities.List[i].pExt->GetName();
+							if (pName) {
+								UI::mManager.Menus[MENU_CLIENTS].Options.Get(i)->pDisplayName = pName;
+							}
+						}
+					}
+
+					if (i < __MAXCLIENTS__) {
+						if (CG::cEntities.List[i].pExt->pName && CG::cEntities.List[i].pExt->pRealName) {
+							if (!Compare(CG::cEntities.List[i].pExt->pName, CG::cEntities.List[i].pExt->pRealName)) {
+								//DbgPrint("%s is spoofing their gamertag to %s", CG::cEntities.List[i].pExt->pRealName, CG::cEntities.List[i].pExt->pName);
+							}
+						}
+
+						// Check if they're whitelisted
+						for (DWORD v = 0; v < CG::vWhitelisted.size(); v++) {
+							if (CG::cEntities.List[i].pExt->cXuid == CG::vWhitelisted[v]) {
+								CG::cEntities.List[i].pExt->bWhitelisted = true;
+								break;
+							}
+						}
+						// Check if they're prioritized
+						for (DWORD v = 0; v < CG::vPreferred.size(); v++) {
+							if (CG::cEntities.List[i].pExt->cXuid == CG::vPreferred[v]) {
+								CG::cEntities.List[i].pExt->bPreferred = true;
+								break;
+							}
+						}
+					}
+				}
+				if (i < __MAXCLIENTS__) {
+					// Make sure no blank options exist in the client menu
+					if (Compare(UI::mManager.Menus[MENU_CLIENTS].Options.Get(i)->pDisplayName, __EMPTYSTR__)) {
+						UI::mManager.Menus[MENU_CLIENTS].Options.Get(i)->pDisplayName = pInvalidClient;
+					}
+				}
+			}
+			// Refresh our menu ui to reflect any changes we made this frame
+			UI::mManager.RefreshMenuText();
+		}
+		Sleep(33);
+	}
+	return 0;
+}
+
+HANDLE hThread = NULL;
+VOID InitialSetup() {
+	// Create a thread to check for xuid/gamertag changes - PUT ANY POTENTIALLY BLOCKING OPERATIONS THAT MUST BE CALLED FROM A TITLE THREAD HERE!
+	hThread = CreateThread(0, 16000, TitleThread, NULL, 0, 0);
+
+	// Cache our fonts and materials
+	CG::dwWhite = GameFuncs::CacheMaterial(ES("white"));
+	CG::dwArrowIcon = GameFuncs::CacheMaterial(__ARROWICON__);
+	CG::dwSmallFont = GameFuncs::CacheFont(__SMALLFONT__);
+	if (__SCAVENGERHUDNAME__ != "") {
+		CG::dwScavPackMaterial = GameFuncs::CacheMaterial(__SCAVENGERHUDNAME__);
+	}
+
+	// Calculate the screen mins/maxes and center point
+	GameFuncs::CalcScreenDimensions();
+
+	// Allocate our Invalid Client string
+	pInvalidClient = EA("Searching...");
+
+	// Initialize our menu HudElems
+	UI::Initialize();
+
+	DbgPrint("Font/Shader initialization complete!");
+
+	bFirstRun = FALSE;
+}
+
+VOID R_EndFrame_Ext() {
+	// If our process is shutting down, skip the detour entirely
+	if (NiNJA.bTerminateProcess || NiNJA.bShutdownCheats || NiNJA.bExternUnload) {
+		//if (hThread) {
+		//	if (XCloseHandle(hThread)) {
+		//		DbgPrint("Name thread handle closed!");
+		//	}
+		//}
+		if (UI::bInitialized) {
+			UI::Shutdown();
+		}
+		return;
+	}
+
+	// Run our initial setup
+	if (bFirstRun) {
+		InitialSetup();
+	}
+#if !defined(BO2)
+	CG::bInGame = GameFuncs::CheckInGame();
+#else 
+	bool bInGame = GameFuncs::CheckInGame();
+	if (bInGame) {
+		DWORD cgs_t = *(DWORD*)decryptDWORD(Not(NiNJA.cPatches)->CoD.CGS_t);
+		if (cgs_t) {
+			CG::bInGame = bInGame && *(DWORD*)(cgs_t + 0x1660) != 0;
+		}
+		else {
+			CG::bInGame = false;
+		}
+	}
+	else {
+		CG::bInGame = bInGame;
+	}
+#endif
+	if (CG::bInGame && !CG::bLobbyInitialized) {
+		// Make sure our localClient index has been set
+		if (!GameFuncs::GetLocalClientIndex()) {
+			DbgPrint("Failed to get our localClientIndex!");
+			return;
+		}
+		DbgPrintE("We are client %i!", CG::iLocalClient);
+
+		// Cache our tags
+		for (DWORD i = 0; i < CG::cTags.List.size(); i++) {
+			CG::cTags.List[i].uNum = GameFuncs::CacheTag(CG::cTags.List[i].pName);
+		}
+		DbgPrint("Success caching tags!");
+
+		if (__SCAVENGERWEAPNAME__ != "") {
+			CG::dwScavPackWeaponID = GameFuncs::GetWeaponIndexForName(__SCAVENGERWEAPNAME__);
+		}
+
+		// Check if we're in multiplayer or not
+		CG::bIsMultiplayer = GameFuncs::IsMultiplayer();
+
+		// Cache our riot shield weapon indicies 
+		GameFuncs::CacheShield();
+
+	#if defined(AW)
+		// The hud moves on aw, and it makes our custom radar look like shit... disable this.
+		GameFuncs::SendConsoleCommand(ES("lui_hud_motion_enabled 0"));
+	#endif
+
+		DbgPrint("We have entered the game!");
+		CG::bLobbyInitialized = TRUE;
+	}
+	else if (!CG::bInGame && CG::bLobbyInitialized) {
+		// Reset our entity struct
+		CG::cEntities.Reset();
+
+		//for (DWORD i = 0; i < __MAXCLIENTS__; i++) {
+		//	CG::cEntities.List[i].pExt->cXuid = GetTickCount(); // Set the xuid to a totally random value, so we HAVE to regrab
+		//}
+
+		DbgPrint("We have left the game!");
+		CG::bLobbyInitialized = FALSE;
+	}
+	else if (CG::bInGame && CG::bLobbyInitialized) {
+		// Constantly grab our localClientIndex, if it fails mark us as "not ingame" anymore
+		if (GameFuncs::GetLocalClientIndex()) {
+			CG::iRealLocalClient = GameFuncs::GetStaticLocalClientIndex();
+			
+			// Draw our esp if we're ingame and lobby is initialized
+			if (UI::bInitialized) {
+				ESP::Draw();
+			}
+		}
+	}
+
+	if (UI::bInitialized) {
+		//// Init our NiNJA Engine logo
+		//NiNJAElem.dwFlags = ELEM_TYPE_TEXT | ELEM_FLAG_ENCRYPTED; // Our text is now encrypted in memory all the time. it's only decrypted for a split second when its being drawn :)
+		//NiNJAElem.pSecureValue = EROT13("NiNJA Engine v2.0.1");
+		//NiNJAElem.dwAsset = CG::dwSmallFont;
+		//memcpy(NiNJAElem.pColor, Colors::White, 0x10);
+		////NiNJAElem.rainbowFade = true;
+		//NiNJAElem.fFontScale = 0.7f;
+		//NiNJAElem.fX = NiNJA.dwScreenMaxX - 160;
+		//NiNJAElem.fY = 35;
+		//NiNJAElem.bVisible = TRUE;
+		//HudElems::InitHudElem(&NiNJAElem);
+
+		// Draw our engine logo
+		PCHAR pEngineText = GameFuncs::va("%s", ES("NiNJA Engine v2.0.1"));
+		DWORD dwTextWidth = GameFuncs::GetTextWidth(pEngineText, CG::dwSmallFont) * 0.7f;
+		GameFuncs::DrawText(pEngineText, CG::dwSmallFont, (FLOAT)NiNJA.dwScreenMaxX - dwTextWidth - 32.0f, 35.0f, 0.7f, 0.7f, 0.0f, CG::cTopRightTextColor);
+
+		// Calculate our FPS
+		PCHAR pFpsText = GameFuncs::va("FPS: %i", GameFuncs::CalculateFPS());
+		dwTextWidth = GameFuncs::GetTextWidth(pFpsText, CG::dwSmallFont) * 0.7f;
+		GameFuncs::DrawText(pFpsText, CG::dwSmallFont, (FLOAT)NiNJA.dwScreenMaxX - dwTextWidth - 32.0f, 35.0f + CG::fMenuFontHeight, 0.7f, 0.7f, 0.0f, CG::cTopRightTextColor);
+
+		/*if (CG::cButtons.dwFlags & BUTTON_A) {
+			PCHAR mapName = GameFuncs::GetMapName();
+			if (mapName) {
+				DbgPrintE("MapName: %s", mapName);
+			}
+
+			PCHAR gameType = GameFuncs::GetGametypeName();
+			if (gameType) {
+				DbgPrintE("GameType: %s", gameType);
+			}
+		}*/
+
+		// Monitor our menu button presses
+		UI::mManager.MonitorButtons();
+
+		// Draw all our HudElems
+		HudElems::ProcessHudElems();
+	}
+}
+
+VOID R_EndFrame_Post() {
+}
+
+/* Function that gets called when R_EndFrame is called */
+VOID R_EndFrame_Hook() {
+	// Call our R_EndFrame extention function
+	R_EndFrame_Ext();
+
+	R_EndFrame_Detour.CallOriginal(0);
+
+	// Call our post R_EndFrame function
+	R_EndFrame_Post();
+}
+#pragma endregion
+
+/* XamInputGetState hook and all associated functions*/
+#pragma region XamInputGetState hook
+/* Function that gets called when XamInputGetState is called */
+bool bWasReloading = false, bYPressed = false;
+int iYCount = 0;
+DWORD XamInputGetState_Hook(DWORD dwUserIndex, DWORD r4, PXINPUT_STATE pState) {
+	// Get the result of our original call, we may need to modify it
+	DWORD ret = XamInputGetState_Detour.CallOriginal(dwUserIndex, r4, pState);
+
+	// Only handle cases where the userindex was controller 1
+	if(dwUserIndex == 0) {
+		// Only handle cases when the original call was successful
+		if (ret == ERROR_SUCCESS) {
+			// If the menu is currently open
+			if (CG::bMenuOpen) {
+				// Ignore some button presses
+				for (DWORD i = 0; i < ARRAY_SIZE(pRemoveFlags); i++) {
+					if (pState->Gamepad.wButtons & pRemoveFlags[i].dwFlag) {
+						if (!CG::bInGame || (pRemoveFlags[i].bDisableInGame && CG::bInGame)) {
+							pState->Gamepad.wButtons &= ~pRemoveFlags[i].dwFlag;
+						}
+					}
+				}
+
+				// And make sure the game doesn't think we're touching the thumbsticks, unless we're ingame
+				if (!CG::bInGame || (CG::bInGame && CG::bAnalogControl)) {
+					pState->Gamepad.sThumbLX = 0;
+					pState->Gamepad.sThumbLY = 0;
+					if (!CG::bInGame) {
+						// We don't want to disable these ones in game... then we can't look around.
+						pState->Gamepad.sThumbRX = 0;
+						pState->Gamepad.sThumbRY = 0;
+					}
+				}
+			}
+
+			if (CG::bInGame && CG::bLobbyInitialized) {
+				// Only remove the firing/aiming flag if our current weapon has a clip... if not, allow it through
+				vec3_t *pViewOrig = GameFuncs::GetRefDefViewOrigin();
+				if (pViewOrig) {
+					bool bClipless = CG::cEntities.List[CG::iLocalClient].pExt->sWeaponClipSize == 0;
+				#if defined(MW1) || defined(WAW)
+					bool bOutOfBody = false;
+				#else
+					bool bOutOfBody = !pViewOrig->IsWithin(vec3_t(75.0f, 75.0f, 1000.0f), CG::cEntities.List[CG::iLocalClient].vLocation);
+				#endif
+					// If our weapon has a clip, and we are currently viewing the world as our own player
+					if (!bClipless && !bOutOfBody) {
+						// We aren't in a killstreak
+						CG::bInKillstreak = false;
+
+						// Remove the firing flag  from our xinputstate, its more accurate if we add it to the usercmd manually later on
+						if (pState->Gamepad.bRightTrigger > 0) {
+							pState->Gamepad.bRightTrigger = 0;
+						}
+
+						// Same thing as above except for with LT, if we're using a dual wield weapon
+						if (CG::cEntities.List[CG::iLocalClient].pExt->bWeaponDualWield) {
+							if (pState->Gamepad.bLeftTrigger > 0) {
+								pState->Gamepad.bLeftTrigger = 0;
+							}
+						}
+					}
+					// Otherwise, we're using a weapon/equipment with no clip, and/or are in a killstreak, or dead
+					else {
+						// If we're holding an eqiupment or weapon with no clip and alive, and not out of body, we can't be in a killstreak
+						if (!bOutOfBody && bClipless && CG::cEntities.List[CG::iLocalClient].bAlive) {
+							CG::bInKillstreak = false;
+						}
+						// Otherwise if our weapon has a clip and we're just out of body, autoshoot :)
+						else if (bOutOfBody) {
+							// If we got here, it means we're in a killstreak
+							CG::bInKillstreak = true;
+							
+							DbgPrint("Streakz");
+
+							// If the mod has determined we need to autoshoot, and we aren't already pulling the trigger, set right trigger to firing then add the firing flag to our button flags
+							if (CG::bShouldAutoShoot && pState->Gamepad.bRightTrigger == 0) {
+								pState->Gamepad.bRightTrigger = 120;
+							}
+						}
+					}
+				}
+				if (bWasReloading) { //simulate a double y press to cancel reload animation 
+				#if defined(MW1) || defined(WAW) || defined(BO2)
+					if (!bYPressed) {
+						if (!((pState->Gamepad.wButtons & XINPUT_GAMEPAD_Y) == XINPUT_GAMEPAD_Y)) {
+							pState->Gamepad.wButtons |= XINPUT_GAMEPAD_Y;
+						}
+						bYPressed = true;
+						iYCount++;
+					}
+					if (iYCount > 1) {
+						bWasReloading = false;
+						iYCount = 0;
+						bYPressed = false;
+					}
+				#else
+					pState->Gamepad.sThumbLY = 32767;
+					if (!(pState->Gamepad.wButtons & XINPUT_GAMEPAD_LEFT_THUMB)) {
+						pState->Gamepad.wButtons |= XINPUT_GAMEPAD_LEFT_THUMB;
+					}
+					bWasReloading = false;
+				#endif
+				}
+			}
+		}
+		if (CG::bInGame && CG::bLobbyInitialized) {
+			bool bUsingDualWield = CG::cEntities.List[CG::iLocalClient].pExt->bWeaponDualWield;
+			if (bUsingDualWield) {
+				if (CG::cEntities.List[CG::iLocalClient].pExt->sAmmoRightHand == 0) {
+					bAutoShootFlip = true;
+				}
+				else if (CG::cEntities.List[CG::iLocalClient].pExt->sAmmoLeftHand == 0) {
+					bAutoShootFlip = false;
+				}
+			}
+			else {
+				bAutoShootFlip = false;
+			}
+
+			bool bShouldTriggerBot = CG::bTriggerbot && CG::iLookingAtEntity >= 0 && CG::iLookingAtEntity < __MAXENTITIES__;
+			if (bShouldTriggerBot) {
+				bShouldTriggerBot = CG::cEntities.List[CG::iLookingAtEntity].pExt != 0 && CG::cEntities.List[CG::iLookingAtEntity].bEnemy &&  CG::cEntities.List[CG::iLookingAtEntity].pExt->bVisible;
+
+			}
+
+			// Check whether or not we should autoshoot
+			CG::bShouldAutoShoot = !CG::cEntities.List[CG::iLocalClient].pExt->bPrimaryShield && ((bShouldTriggerBot && GameFuncs::GetZoomState() >= CG::fTriggerbotZoom) || ((CG::bAutoShoot && (ESP::bAnyEnemyVisible || ESP::bAnyEnemyWallbangable)) && (!CG::bIgnoreRiotShielders || (CG::bIgnoreRiotShielders && !Aimbot::bTargetUsingShield))));
+
+			// Finally, set our final flags we'll use to decide if we should fire with the left/right weapon
+			CG::cButtons.bFiring = (pState->Gamepad.bRightTrigger > 0) || (CG::cButtons.dwFlags & BUTTON_RT) != 0 || (CG::cEntities.List[CG::iLocalClient].pExt->sAmmoRightHand > 0 && GameFuncs::GetWeaponCooldownTime() <= 0 && !bAutoShootFlip && CG::bShouldAutoShoot);
+			CG::cButtons.bFiringSecondary = (pState->Gamepad.bLeftTrigger > 0 && bUsingDualWield) || ((CG::cButtons.dwFlags & BUTTON_LT) && bUsingDualWield) != 0 || (CG::cEntities.List[CG::iLocalClient].pExt->sAmmoLeftHand > 0 && GameFuncs::GetWeaponCooldownTime(true) <= 0 && bAutoShootFlip && CG::bShouldAutoShoot);
+		}
+	}
+	return ret;
+}
+#pragma endregion
+
+/* BG_UpdatePlayerDObj hook */
+#pragma region BG_UpdatePlayerDObj hook
+VOID BG_UpdatePlayerDObj_Hook(DWORD dwLocalClient, DWORD dwDObj, DWORD dwEntityState, DWORD dwClientInfo, DWORD dwAttachIgnoreCollision) {
+	if (NiNJA.bTerminateProcess || NiNJA.bShutdownCheats || NiNJA.bExternUnload) {
+		goto jEnd;
+	}
+
+	if (dwLocalClient == 0 && dwClientInfo > 0xAA000000)
+	{
+		int iClient = *(int*)dwEntityState;
+		if (iClient >= 0 && iClient < 18) {
+			CG::cEntities.List[iClient].pClientInfo = dwClientInfo;
+		}
+	}
+jEnd:
+	BG_UpdatePlayerDObj_Detour.CallOriginal(dwLocalClient, dwDObj, dwEntityState, dwClientInfo, dwAttachIgnoreCollision);
+}
+#pragma endregion
+
+/* CG_CompassDrawPlayerMap hook */
+#pragma region CG_CompassDrawPlayerMap hook
+VOID CG_CompassDrawPlayerMap_Hook(DWORD localClient, DWORD mapType, DWORD size, DWORD rectDef, DWORD shader, const float *color, DWORD unk1, DWORD unk2, DWORD unk3, float f1, float f2, float f3, float f4, float f5, float f6) {
+	if(NiNJA.bTerminateProcess || NiNJA.bShutdownCheats || NiNJA.bExternUnload) {
+		goto jEnd;
+	}
+	if (CG::bInGame && CG::bLobbyInitialized && (mapType == 0 || mapType == 1)) {
+		ESP::lastCompassType = mapType;
+	#if !defined(BO2)
+		CRectDef *rd = (CRectDef*)(rectDef);
+		memcpy(&ESP::lastCompass, (PVOID)rectDef, sizeof(CRectDef));
+	#endif
+		ESP::drawCompassTimer = NiNJA.dwTickCount + 50;
+	}
+jEnd:
+	CG_CompassDrawPlayerMap_Detour.CallOriginal(localClient, mapType, size, rectDef, shader, color, unk1, unk2, unk3, f1, f2, f3, f4, f5, f6);
+}
+#pragma endregion
+
+/* CG_EntityEvent hook */
+#pragma region CG_EntityEvent hook
+DWORD dwLastEntityState = NULL;// , dwLastKillTime = NULL, dwSpreeEndTime = NULL;
+VOID CG_EntityEvent_Hook(DWORD dwLocalClient, DWORD dwEntityState, int iEvent, int iEventParam) {
+	if (NiNJA.bTerminateProcess || NiNJA.bShutdownCheats || NiNJA.bExternUnload) {
+		goto jEnd;
+	}
+
+	if (CG::bInGame && CG::bLobbyInitialized && CG::cEntities.List[CG::iLocalClient].pExt) {
+		if (iEvent == decryptDWORD(Not(NiNJA.cPatches)->CoD.EV_OBITUARY) && dwEntityState != dwLastEntityState) {
+			int attacker = 0, victim = 0;
+			attacker = GameFuncs::GetObituaryAttacker(dwEntityState);
+			victim = GameFuncs::GetObituaryVictim(dwEntityState);
+
+			if (attacker >= 0 && attacker < __MAXCLIENTS__ && victim >= 0 && victim < __MAXCLIENTS__) {
+				if (CG::cEntities.List[attacker].pExt && CG::cEntities.List[victim].pExt) {
+					// If they're the victim, their streak has ended (we probably dont need to set this, but we will just to prevent racing conditions)
+					CG::cEntities.List[victim].pExt->sCurrentStreak = 0;
+
+					// If the victim was us
+					if (victim == CG::iRealLocalClient) {
+						// Mark the attacker as having killed us
+						CG::cEntities.List[attacker].pExt->bHasKilledMe = true;
+					}
+
+					// Make sure the server hasn't gone back in time, so we can handle killcams properly
+					DWORD dwServerTime = *(DWORD*)UserCmd::GetUserCmd(UserCmd::GetCurrentUserCmdNum());//GameFuncs::GetServerTime();
+					if (dwServerTime >= CG::cEntities.List[attacker].pExt->dwLastKillTime) {
+						//DbgPrint("LastKillTime: %X, ServerTime: %X", CG::cEntities.List[attacker].pExt->dwLastKillTime, dwServerTime);
+						// Make sure the attacker killed another person, and not themselves
+						if (attacker != victim) {
+							// Check if the attacker has a killing spree going
+							if (CG::cEntities.List[attacker].pExt->dwSpreeEndTime > dwServerTime || CG::cEntities.List[attacker].pExt->sCurrentSpree == 0) {
+								// Increment our killing spree
+								CG::cEntities.List[attacker].pExt->sCurrentSpree++;
+
+								// If we just killed someone, playback our killing spree sound fx
+								if (attacker == CG::iLocalClient) {
+									CG::pSounds.Queue(SOUND_KILLSPREE, CG::cEntities.List[attacker].pExt->sCurrentSpree);
+								}
+							}
+							else {
+								// Reset their spree if they took too long, only back to 1 since we're not setting this until we actually got the next kill ;)
+								CG::cEntities.List[attacker].pExt->sCurrentSpree = 1;
+							}
+
+							// Increment their current streak
+							CG::cEntities.List[attacker].pExt->sCurrentStreak++;
+
+							// Save our last kill time so we can check if we're in a killcam or not (doesn't seem to work)
+							CG::cEntities.List[attacker].pExt->dwLastKillTime = dwServerTime;
+
+							// Set our spree end time so we can tell if we're on a killing spree next time we get a kill
+							CG::cEntities.List[attacker].pExt->dwSpreeEndTime = dwServerTime + __KILLSPREEINTERVAL__;
+
+							// Debug output for our own client, and audio playback
+							if (attacker == CG::iLocalClient) {
+								// Queue up an audio playback event... if the sound doesn't exist it will just be erased from the queue
+								CG::pSounds.Queue(SOUND_KILLSTREAK, CG::cEntities.List[attacker].pExt->sCurrentStreak);
+							}
+
+							DbgPrint("%s has killed %s at time %i! Streak: %i, Spree: %i", CG::cEntities.List[attacker].pExt->GetName(), CG::cEntities.List[victim].pExt->GetName(), dwServerTime, CG::cEntities.List[attacker].pExt->sCurrentStreak, CG::cEntities.List[attacker].pExt->sCurrentSpree);
+						}
+						else {
+							DbgPrintE("%s has commited suicide!", CG::cEntities.List[attacker].pExt->GetName());
+						}
+					}
+					else {
+						DbgPrint("A killcam is playing! Skipping this kill!");
+					}
+				}
+			}
+			dwLastEntityState = dwEntityState;
+		}
+
+		if (CG::bFastReload && !CG::cEntities.List[CG::iLocalClient].pExt->bWeaponDualWield) {
+			if (iEvent == decryptDWORD(Not(NiNJA.cPatches)->CoD.EV_RELOAD_ADDAMMO)) {
+				int client = GameFuncs::GetReloadClientIndex(dwEntityState);
+				if (client == CG::iLocalClient)
+					bWasReloading = true;
+			}
+			else if (iEvent == decryptDWORD(Not(NiNJA.cPatches)->CoD.EV_PUTAWAY_WEAPON)) {
+				int client = GameFuncs::GetWeaponSwitchClientIndex(dwEntityState);
+				if (bWasReloading && iYCount == 1)
+					bYPressed = false;
+			}
+		}
+	}
+jEnd:
+	CG_EntityEvent_Detour.CallOriginal(dwLocalClient, dwEntityState, iEvent, iEventParam);
+}
+#pragma endregion
+
+/* CL_SendCommand hook */
+#pragma region CL_SendCommand hook
+FLOAT currentSpinVal;
+VOID CL_SendCmd_Ext() {
+	if (NiNJA.bTerminateProcess || NiNJA.bShutdownCheats || NiNJA.bExternUnload) {
+		return;
+	}
+
+	if (CG::bInGame && CG::bLobbyInitialized) {
+#if !defined(MW1) && !defined(GHOSTS) && !defined(AW) && !defined(BO3)
+		// Run our aimbot logic, if our aimbot isnt disabled and we're using silent aim
+		if (CG::dwAimbotType != AIM_TYPE_OFF && CG::dwAimbotType == AIM_TYPE_SILENT && !CG::bInKillstreak) {
+			Aimbot::Rape();
+		}
+
+		// Apply our nospread angles, if we're firing
+		if (CG::bNoSpread) {
+			NoSpread::Apply();
+		}
+#endif
+
+		if (!CG::bInKillstreak) {
+			// Grab the current usercmd and a pointer to our viewangles
+			int currentUserCmd = UserCmd::GetUserCmd(UserCmd::GetCurrentUserCmdNum());
+			int viewAngles = UserCmd::GetUserCmdViewAngles(currentUserCmd);
+
+			// Handle anti aim
+			if (CG::bAntiAim) {
+				// Use the y value from our current aimbot angles and invert it, so we face backwards towards the enemy
+				float AntiAimVal = AngleNormalize(Aimbot::vAimbotAngles.y + 180.0f);
+
+				vec3_t refDefViewAngles = GameFuncs::Get_RefDef_ViewAngles();
+				// Write our modded angles to the current usercmd, so it shows visually
+				*(int*)viewAngles = AngleToShort(AngleNormalize(decryptFLOAT(Not(NiNJA.cPatches)->CoD.ShieldAntiAimAdditave) + ShortToAngle(*(int*)(viewAngles)) - refDefViewAngles.x));
+				*(int*)(viewAngles + 0x4) = AngleToShort(AntiAimVal);
+			}
+
+			////if (CG::dwYSpinSpeed > 0) {
+			//	vec3_t *spawnAngles = GameFuncs::GetSpawnAngles();
+			//	//vec3_t *clientActiveViewAngles = GameFuncs::Get_ClientActive_ViewAngles();
+			//	//if (File::spinbotState != File::SPIN_OFF)
+			//	//{
+			//	//	currentSpinY = -currentSpinVal - spawnAngles->y;
+
+			//	//	if (File::spinbotState == File::SPIN_NORMAL || (File::spinbotState == File::SPIN_CYCLE && currentSpinState == File::SPIN_NORMAL) ||
+			//	//		File::spinbotState == File::SPIN_BOTH || (File::spinbotState == File::SPIN_CYCLE && currentSpinState == File::SPIN_BOTH))
+			//	//	{
+			//			currentSpinVal = AngleNormalize(currentSpinVal + 50.0f);
+			//			*(DWORD*)(viewAngles + 0x4) = AngleToShort(-currentSpinVal - spawnAngles->y);
+			//	//		//if (File::SpinbotPreview)
+			//	//		//	clientActiveViewAngles->y = currentSpinY;
+			//	//	}
+			//	//}
+			////}
+		}
+	}
+}
+
+VOID CL_SendCommand_Hook(DWORD dwLocalClient) {
+	// Call our extention function
+	CL_SendCmd_Ext();
+
+	CL_SendCommand_Detour.CallOriginal(dwLocalClient);
+}
+#pragma endregion
+
+/* Anti-derank hooks */
+#pragma region Anti-derank hooks
+#if defined(MW1) || defined(WAW) || defined(MW2)
+Detour<void> LiveStorage_SetStat_Detour;
+VOID AntiDerankPatches(BOOL bState) {
+#if defined(MW1)
+	if (bState) {
+		*(int*)0x822D13DC = 0x60000000;
+		*(int*)0x821A36B8 = 0x60000000;
+	}
+	else {
+		*(int*)0x822D13DC = 0x4BED186D;
+		*(int*)0x821A36B8 = 0x4BFFF591;
+	}
+#elif defined(WAW)
+	if (bState) {
+		*(int*)0x822EE558 = 0x60000000;
+		*(int*)0x822EE3B4 = 0x60000000;
+		*(int*)0x821B7390 = 0x60000000;
+	}
+	else {
+		*(int*)0x822EE558 = 0x4BFFFC69;
+		*(int*)0x822EE3B4 = 0x4BFFFE0D;
+		*(int*)0x821B7390 = 0x48136E31;
+	}
+#endif
+}
+
+#if defined(MW1) || defined(WAW)
+VOID LiveStorage_SetStat_Hook(const int controllerIndex, int index, const int value) {
+#elif defined(MW2)
+VOID LiveStorage_SetStat_Hook(int LocalClient) {
+#endif
+	if (CG::bInGame) {
+		if (CG::bAntiDerank) {
+			AntiDerankPatches(TRUE);
+		#if defined(MW2)
+			int index = atoi((CONST PCHAR)(*(int*)(*(int*)(0x8313102C + (*(int*)(0x83130FC8) * 4)) + 4)));
+			if ((index == 2064) || (index == 2068) || (index == 2056) || (index == 3000)) {
+		#else
+			if (index == 2301 || index == 2326 || index == 2350 || index == 2300 || index == 299) {
+		#endif
+				DbgPrint("Someone attempted to reset your stats! %d", index);
+				return;
+			}
+		}
+		else {
+			AntiDerankPatches(FALSE);
+		}
+	}
+#if !defined(MW2)
+	return LiveStorage_SetStat_Detour.CallOriginal(controllerIndex, index, value);
+#else
+	return LiveStorage_SetStat_Detour.CallOriginal(LocalClient);
+#endif
+}
+#endif
+
+#if defined(MW3) || defined(GHOSTS) || defined(AW)
+int getStatIndex(int msgt) {
+	return *(short*)(*(int*)(msgt + 8) + 1);
+}
+
+BYTE* getStatValue(int msgt) {
+#if defined(MW3)
+	return (BYTE*)(*(int*)(msgt + 8) + 4);
+#else
+	return (BYTE*)(*(int*)(msgt + 8) + 6);
+#endif
+}
+
+
+Detour<VOID> LiveStats_WriteStat_Detour;
+void LiveStats_WriteStat_Hook(int localClientNum, int msg_t) {
+	if (CG::bAntiDerank && CG::bInGame) {
+		// Some hash
+		if (getStatIndex(msg_t) < 8)
+			return;
+
+	#if defined(MW3)
+		// Prestige
+		if (getStatIndex(msg_t) == 0xCA8)
+			return;
+
+		// Custom Classes
+		if (getStatIndex(msg_t) >= 0x102F && getStatIndex(msg_t) <= 0x17DF)
+			return;
+
+		// Experience
+		if (getStatIndex(msg_t) == 0xA98)
+			return;
+
+		// Level
+		if (getStatIndex(msg_t) == 0xCAC)
+			return;
+
+		// Prestige Tokens
+		if (getStatIndex(msg_t) == 0x2B07)
+			return;
+
+		// If we are in private match (xblive_privatematch)
+		if (GameFuncs::Dvar_GetValue(0x83969820) != 0)
+			return;
+
+		// If the host changed our xp clamp
+		if (GameFuncs::Dvar_GetValue(0x837B6F08) != 65000)
+			return;
+
+		// If the host changed our weapon xp clamp
+		if (GameFuncs::Dvar_GetValue(0x837B6EF8) != 65536)
+			return;
+	#elif defined(GHOSTS)
+		// Prestige
+		if (getStatIndex(msg_t) == 0x4F24 || getStatIndex(msg_t) == 0x09)
+			return;
+
+		// Experience
+		if (getStatIndex(msg_t) == 0x6D)
+			return;
+
+		// Prestige Tokens
+		if (getStatIndex(msg_t) == 0x1D)
+			return;
+
+		// Unlock Tokens
+		if (getStatIndex(msg_t) == 0x4C2C)
+			return;
+	#elif defined(AW)
+		// Prestige
+		if (getStatIndex(msg_t) == 0x09)
+			return;
+
+		// Experience
+		if (getStatIndex(msg_t) == 0xA5)
+			return;
+
+		// Level
+		if (getStatIndex(msg_t) == 0xA9)
+			return;
+
+		// Wins
+		if (getStatIndex(msg_t) == 0xFE)
+			return;
+
+		// Ranked Play
+		if (getStatIndex(msg_t) == 0x10E)
+			return;
+	#endif
+	}
+	return LiveStats_WriteStat_Detour.CallOriginal(localClientNum, msg_t);
+}
+#endif
+#pragma endregion
+
+
+/* Test detours, that may or may not make it into the final xex */
+#pragma region Test shit
+//Detour<PVOID> Dvar_RegisterNew_Detour;
+//PVOID Dvar_RegisterNew_Hook(DWORD r3, DWORD r4, DWORD r5, DWORD r6, DWORD r7, DWORD r8) {
+//	PVOID pDvar = Dvar_RegisterNew_Detour.CallOriginal(r3, r4, r5, r6, r7, r8);
+//	// DbgPrintE("Registered new dvar: \"%s\" (0x%X)", pDvarName, pDvar); // BO2
+//	if (pDvar) {
+//		DbgPrintE("Registered new dvar: \"%s\" (0x%X)", *(PCHAR*)pDvar, pDvar); // AW
+//	}
+//	return pDvar;
+//}
+
+//Detour<int> UI_DrawText_Detour;
+//int UI_DrawText_Hook(DWORD screenPlace, PCHAR pText, int maxTextSize, DWORD font, FLOAT fX, FLOAT fY, DWORD horizAlign, DWORD vertAlign, FLOAT fScale, FLOAT *color, int style) {
+//	if (Contains(pText, "Team Deathmatch")) {
+//		DbgPrintE("Horiz: %X, Vert: %X", horizAlign, vertAlign);
+//	}
+//	return UI_DrawText_Detour.CallOriginal(screenPlace, pText, maxTextSize, font, fX, fY, horizAlign, vertAlign, fScale, color, style);
+//}
+
+Detour<int> XamUserGetName_Detour;
+int XamUserGetName_Hook(DWORD dwLocalClient, PCHAR pNameOut, DWORD dwNameSize) {
+	int iRet = XamUserGetName_Detour.CallOriginal(dwLocalClient, pNameOut, dwNameSize);
+	//DbgPrint("UserIndex?: %X, NameBuffer: %X, BufferSize: %X", r3, r4, r5);
+	memcpy(pNameOut, "^2BillyBobDaFuckinBoss", dwNameSize);
+	return iRet;
+}
+
+Detour<VOID> CL_AddReliableCommand_Detour;
+VOID CL_AddReliableCommand_Hook(DWORD dwLocalClient, PCHAR pCmd) {
+	if (CG::cButtons.dwFlags & BUTTON_A) {
+		DbgPrintE("Command: %s", pCmd);
+	}
+	if (Compare(pCmd, __SCORECMD__)) {
+		dwScoreEndTime = GetTickCount() + 2500;
+	}
+	CL_AddReliableCommand_Detour.CallOriginal(dwLocalClient, pCmd);
+}
+#pragma endregion
+
+/* Apply our title-specific detours */
+BOOL TitleHooks::Apply() {
+	if (!bInitialized) {
+		// Initialize a global variable with a pointer to our current TitleHooks object
+		pThis = this;
+
+		// Test detours
+		//// AW
+		//Dvar_RegisterNew_Detour.SetupDetour(0x823669C0, Dvar_RegisterNew_Hook); // BO2 0x82497720
+		//UI_DrawText_Detour.SetupDetour(decryptPatch(Not(NiNJA.cPatches)->CoD.UI_DrawText), &UI_DrawText_Hook); 
+
+		CL_AddReliableCommand_Detour.SetupDetour(decryptDWORD(Not(NiNJA.cPatches)->CoD.CL_AddReliableCommand), &CL_AddReliableCommand_Hook);
+
+		// Setup our detours
+		if (!XamInputGetState_Detour.SetupDetour(0x82000000, ES("xam.xex"), 0x191, XamInputGetState_Hook)) {
+			DbgPrint("Failed to hook XamInputGetState! Cannot continue!");
+			return FALSE;
+		}
+		else if (!R_EndFrame_Detour.SetupDetour(decryptDWORD(Not(NiNJA.cPatches)->CoD.R_EndFrame), &R_EndFrame_Hook)) {
+			DbgPrint("Failed to hook R_EndFrame! Cannot continue!");
+			return FALSE;
+		}
+		else if (!CL_CreateNewCommands_Detour.SetupDetour(decryptDWORD(Not(NiNJA.cPatches)->CoD.CL_CreateNewCommands), &CL_CreateNewCommands_Hook)) {
+			DbgPrint("Failed to hook CL_CreateNewCommands! Cannot continue!");
+			return FALSE;
+		}
+		else if (!CG_EntityEvent_Detour.SetupDetour(decryptDWORD(Not(NiNJA.cPatches)->CoD.CG_EntityEvent), CG_EntityEvent_Hook)) {
+			DbgPrint("Failed to hook CG_EntityEvent! Cannot continue!");
+			return FALSE;
+		}
+		else if (!CL_SendCommand_Detour.SetupDetour(decryptDWORD(Not(NiNJA.cPatches)->CoD.CL_SendCommand), CL_SendCommand_Hook)) {
+			DbgPrint("Failed to hook CL_SendCommand! Cannot continue!");
+			return FALSE;
+		}
+	#if defined(BO1) || defined(BO2) || defined(BO3)
+		else if (!XamUserGetName_Detour.SetupDetour(0x82000000, ES("xam.xex"), 0x20E, &XamUserGetName_Hook)) {
+			DbgPrint("Failed to hook XamUserGetName! Cannot continue!");
+			return FALSE;
+		}
+	#endif
+	#if !defined(BO3)
+		else if (!CG_CompassDrawPlayerMap_Detour.SetupDetour(decryptDWORD(Not(NiNJA.cPatches)->CoD.CG_CompassDrawPlayerMap), CG_CompassDrawPlayerMap_Hook)) {
+			DbgPrint("Failed to hook CG_CompassDrawPlayerMap! Cannot continue!");
+			return FALSE;
+		}
+	#endif
+	#if !defined(AW) && !defined(BO3)
+		else if(!BG_UpdatePlayerDObj_Detour.SetupDetour(decryptDWORD(Not(NiNJA.cPatches)->CoD.BG_UpdatePlayerDObj), &BG_UpdatePlayerDObj_Hook)) {
+			DbgPrint("Failed to hook BG_UpdatePlayerDObj! Cannot continue!");
+			return FALSE;
+		}
+	#endif
+	#if defined(MW1) || defined(WAW) || defined(MW2)
+		else if (!LiveStorage_SetStat_Detour.SetupDetour(decryptDWORD(Not(NiNJA.cPatches)->CoD.LiveStorage_SetStat), &LiveStorage_SetStat_Hook)) {
+			DbgPrint("Failed to hook LiveStorage_SetStat! Cannot continue!");
+			return FALSE;
+		}
+	#endif
+	#if defined(MW3) || defined(GHOSTS) || defined(AW)
+		else if (!LiveStats_WriteStat_Detour.SetupDetour(decryptDWORD(Not(NiNJA.cPatches)->CoD.LiveStorage_SetStat), &LiveStats_WriteStat_Hook)) {
+			DbgPrint("Failed to hook LiveStorage_SetStat! Cannot continue!");
+			return FALSE;
+		}
+	#endif
+
+		DbgPrint("Applied detours!");
+		bInitialized = TRUE;
+		return TRUE;
+	}
+	else {
+		DbgPrint("TitleHooks already initialized!");
+	}
+	return FALSE;
+}
+
+/* Take down our title-specific detours */
+VOID TitleHooks::Remove(BOOL bOverride) {
+	if (bInitialized || bOverride) {
+		// Take down our detours
+		BG_UpdatePlayerDObj_Detour.TakeDownDetour();
+		CL_CreateNewCommands_Detour.TakeDownDetour();
+		R_EndFrame_Detour.TakeDownDetour();
+		XamInputGetState_Detour.TakeDownDetour();
+		CG_CompassDrawPlayerMap_Detour.TakeDownDetour();
+		CG_EntityEvent_Detour.TakeDownDetour();
+		CL_SendCommand_Detour.TakeDownDetour();
+		XamUserGetName_Detour.TakeDownDetour();
+		CL_AddReliableCommand_Detour.TakeDownDetour();
+
+	#if defined(MW1) || defined(WAW) || defined(MW2)
+		LiveStorage_SetStat_Detour.TakeDownDetour();
+	#elif defined(MW3) || defined(GHOSTS) || defined(AW)
+		LiveStats_WriteStat_Detour.TakeDownDetour();
+	#endif
+
+		// Test detours
+		//Dvar_RegisterNew_Detour.TakeDownDetour();
+		//UI_DrawText_Detour.TakeDownDetour();
+
+		Sleep(1000);
+
+		DbgPrint("Removed detours!");
+		bInitialized = FALSE;
+	}
+	else {
+		DbgPrint("TitleHooks have not been initialized!");
+	}
+}

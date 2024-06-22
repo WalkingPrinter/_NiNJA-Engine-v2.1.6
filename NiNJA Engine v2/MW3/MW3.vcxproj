@@ -1,0 +1,272 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug Retail|Xbox 360">
+      <Configuration>Debug Retail</Configuration>
+      <Platform>Xbox 360</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release Retail|Xbox 360">
+      <Configuration>Release Retail</Configuration>
+      <Platform>Xbox 360</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\src\Aimbot.h" />
+    <ClInclude Include="..\src\AtgAudioCleaned.h" />
+    <ClInclude Include="..\src\Autowall.h" />
+    <ClInclude Include="..\src\Buttons.h" />
+    <ClInclude Include="..\src\Colors.h" />
+    <ClInclude Include="..\src\Debug.h" />
+    <ClInclude Include="..\src\Detour.h" />
+    <ClInclude Include="..\src\Entities.h" />
+    <ClInclude Include="..\src\ESP.h" />
+    <ClInclude Include="..\src\Game.h" />
+    <ClInclude Include="..\src\GameFuncs.h" />
+    <ClInclude Include="..\src\GeoLocationParser.h" />
+    <ClInclude Include="..\src\Globals.h" />
+    <ClInclude Include="..\src\HttpRequest.h" />
+    <ClInclude Include="..\src\HudElemProcessing.h" />
+    <ClInclude Include="..\src\MailMan.h" />
+    <ClInclude Include="..\src\MemoryManager.h" />
+    <ClInclude Include="..\src\Menu.h" />
+    <ClInclude Include="..\src\Nospread.h" />
+    <ClInclude Include="..\src\Patches.h" />
+    <ClInclude Include="..\src\rapidjson\allocators.h" />
+    <ClInclude Include="..\src\rapidjson\document.h" />
+    <ClInclude Include="..\src\rapidjson\encodedstream.h" />
+    <ClInclude Include="..\src\rapidjson\encodings.h" />
+    <ClInclude Include="..\src\rapidjson\error\en.h" />
+    <ClInclude Include="..\src\rapidjson\error\error.h" />
+    <ClInclude Include="..\src\rapidjson\internal\biginteger.h" />
+    <ClInclude Include="..\src\rapidjson\internal\diyfp.h" />
+    <ClInclude Include="..\src\rapidjson\internal\dtoa.h" />
+    <ClInclude Include="..\src\rapidjson\internal\ieee754.h" />
+    <ClInclude Include="..\src\rapidjson\internal\itoa.h" />
+    <ClInclude Include="..\src\rapidjson\internal\meta.h" />
+    <ClInclude Include="..\src\rapidjson\internal\pow10.h" />
+    <ClInclude Include="..\src\rapidjson\internal\regex.h" />
+    <ClInclude Include="..\src\rapidjson\internal\stack.h" />
+    <ClInclude Include="..\src\rapidjson\internal\strfunc.h" />
+    <ClInclude Include="..\src\rapidjson\internal\strtod.h" />
+    <ClInclude Include="..\src\rapidjson\internal\swap.h" />
+    <ClInclude Include="..\src\rapidjson\memorybuffer.h" />
+    <ClInclude Include="..\src\rapidjson\memorystream.h" />
+    <ClInclude Include="..\src\rapidjson\msinttypes\inttypes.h" />
+    <ClInclude Include="..\src\rapidjson\msinttypes\stdint.h" />
+    <ClInclude Include="..\src\rapidjson\rapidjson.h" />
+    <ClInclude Include="..\src\rapidjson\reader.h" />
+    <ClInclude Include="..\src\rapidjson\stream.h" />
+    <ClInclude Include="..\src\rapidjson\stringbuffer.h" />
+    <ClInclude Include="..\src\rapidjson\writer.h" />
+    <ClInclude Include="..\src\SecureStrings.h" />
+    <ClInclude Include="..\src\ServerComm.h" />
+    <ClInclude Include="..\src\Settings.h" />
+    <ClInclude Include="..\src\Sounds.h" />
+    <ClInclude Include="..\src\Spinbot.h" />
+    <ClInclude Include="..\src\SystemHooks.h" />
+    <ClInclude Include="..\src\tinyxml\tinyxml2.h" />
+    <ClInclude Include="..\src\TitleHooks.h" />
+    <ClInclude Include="..\src\UI.h" />
+    <ClInclude Include="..\src\UserCmd.h" />
+    <ClInclude Include="..\src\Utilities.h" />
+    <ClInclude Include="..\src\XBLSMsgr.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="..\src\AtgAudioCleaned.cpp" />
+    <ClCompile Include="..\src\Autowall.cpp" />
+    <ClCompile Include="..\src\Buttons.cpp" />
+    <ClCompile Include="..\src\Colors.cpp" />
+    <ClCompile Include="..\src\Debug.cpp" />
+    <ClCompile Include="..\src\Detour.cpp" />
+    <ClCompile Include="..\src\Entities.cpp" />
+    <ClCompile Include="..\src\ESP.cpp" />
+    <ClCompile Include="..\src\Game.cpp" />
+    <ClCompile Include="..\src\GameFuncs.cpp" />
+    <ClCompile Include="..\src\GeoLocationParser.cpp" />
+    <ClCompile Include="..\src\Globals.cpp" />
+    <ClCompile Include="..\src\HttpRequest.cpp" />
+    <ClCompile Include="..\src\HudElemProcessing.cpp" />
+    <ClCompile Include="..\src\MemoryManager.cpp" />
+    <ClCompile Include="..\src\Menu.cpp" />
+    <ClCompile Include="..\src\NiNJAEngine.cpp" />
+    <ClCompile Include="..\src\Patches.cpp" />
+    <ClCompile Include="..\src\SecureStrings.cpp" />
+    <ClCompile Include="..\src\ServerComm.cpp" />
+    <ClCompile Include="..\src\Sounds.cpp" />
+    <ClCompile Include="..\src\SystemHooks.cpp" />
+    <ClCompile Include="..\src\tinyxml\tinyxml2.cpp" />
+    <ClCompile Include="..\src\TitleHooks.cpp" />
+    <ClCompile Include="..\src\UI.cpp" />
+    <ClCompile Include="..\src\Utilities.cpp" />
+    <ClCompile Include="..\src\XBLSMsgr.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="..\src\Engine.def" />
+    <None Include="..\src\Engine.xml" />
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <ProjectGuid>{61482D75-8B0A-42BE-A41C-A39C3C32C016}</ProjectGuid>
+    <Keyword>Xbox360Proj</Keyword>
+    <ProjectName>MW3</ProjectName>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug Retail|Xbox 360'" Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <CharacterSet>MultiByte</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release Retail|Xbox 360'" Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>MultiByte</CharacterSet>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+  </ImportGroup>
+  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Debug Retail|Xbox 360'" Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release Retail|Xbox 360'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug Retail|Xbox 360'">
+    <LinkIncremental>true</LinkIncremental>
+    <OutputFile>$(OutDir)$(ProjectName).dll</OutputFile>
+    <PostBuildEventUseInBuild>true</PostBuildEventUseInBuild>
+    <ImageXexOutput>$(OutDir)$(ProjectName).xex</ImageXexOutput>
+    <RemoteRoot>HDD:\</RemoteRoot>
+    <CustomBuildAfterTargets>
+    </CustomBuildAfterTargets>
+    <CustomBuildBeforeTargets>DeployToHardDrive</CustomBuildBeforeTargets>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release Retail|Xbox 360'">
+    <LinkIncremental>false</LinkIncremental>
+    <OutputFile>$(OutDir)$(ProjectName).dll</OutputFile>
+    <PostBuildEventUseInBuild>true</PostBuildEventUseInBuild>
+    <ImageXexOutput>$(OutDir)$(ProjectName).xex</ImageXexOutput>
+    <RemoteRoot>HDD:\</RemoteRoot>
+    <CustomBuildAfterTargets>
+    </CustomBuildAfterTargets>
+    <CustomBuildBeforeTargets>DeployToHardDrive</CustomBuildBeforeTargets>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug Retail|Xbox 360'">
+    <ClCompile>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <WarningLevel>Level3</WarningLevel>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <Optimization>MaxSpeed</Optimization>
+      <MinimalRebuild>true</MinimalRebuild>
+      <PrecompiledHeaderOutputFile>$(OutDir)$(ProjectName).pch</PrecompiledHeaderOutputFile>
+      <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
+      <PreprocessorDefinitions>_DEBUG;_XBOX;MW3</PreprocessorDefinitions>
+      <CallAttributedProfiling>Disabled</CallAttributedProfiling>
+      <AdditionalIncludeDirectories>..\src\xkelib;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <InlineFunctionExpansion>Default</InlineFunctionExpansion>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
+      <WholeProgramOptimization>true</WholeProgramOptimization>
+      <StringPooling>true</StringPooling>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <ExceptionHandling>false</ExceptionHandling>
+      <BufferSecurityCheck>false</BufferSecurityCheck>
+    </ClCompile>
+    <Link>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <ProgramDatabaseFile>$(OutDir)$(ProjectName).pdb</ProgramDatabaseFile>
+      <AdditionalDependencies>xapilibd.lib;d3d9d.lib;d3dx9d.lib;xgraphicsd.lib;xboxkrnl.lib;xnetd.lib;xaudiod2.lib;xactd3.lib;x3daudiod.lib;xmcored.lib;xbdm.lib;vcompd.lib;xhttp.lib</AdditionalDependencies>
+      <AdditionalOptions>/dll /ALIGN:128,4096 %(AdditionalOptions)</AdditionalOptions>
+      <ModuleDefinitionFile>
+      </ModuleDefinitionFile>
+      <AdditionalLibraryDirectories>..\src\xkelib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <EntryPointSymbol>
+      </EntryPointSymbol>
+      <LinkTimeCodeGeneration>UseLinkTimeCodeGeneration</LinkTimeCodeGeneration>
+      <StackCommitSize>393216</StackCommitSize>
+    </Link>
+    <ImageXex>
+      <ConfigurationFile>..\src\Engine.xml</ConfigurationFile>
+      <RequireFullExperience>false</RequireFullExperience>
+    </ImageXex>
+    <Deploy />
+    <PostBuildEvent>
+      <Command>
+      </Command>
+    </PostBuildEvent>
+    <Deploy>
+      <DeploymentType>CopyToHardDrive</DeploymentType>
+    </Deploy>
+    <Deploy>
+      <ExcludedFromBuild>true</ExcludedFromBuild>
+    </Deploy>
+    <CustomBuildStep>
+      <Command>"$(ProjectDir)StringEncryptor.exe" "$(ImageXexOutput)"</Command>
+      <Outputs>$(ImageFileName)</Outputs>
+    </CustomBuildStep>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release Retail|Xbox 360'">
+    <ClCompile>
+      <WarningLevel>Level3</WarningLevel>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <Optimization>MaxSpeed</Optimization>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <StringPooling>true</StringPooling>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
+      <PrecompiledHeaderOutputFile>$(OutDir)$(ProjectName).pch</PrecompiledHeaderOutputFile>
+      <PreprocessorDefinitions>NDEBUG;_XBOX;LTCG;MW3</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>..\src\xkelib;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <InlineFunctionExpansion>Default</InlineFunctionExpansion>
+      <MultiProcessorCompilation>false</MultiProcessorCompilation>
+      <CallAttributedProfiling>Disabled</CallAttributedProfiling>
+      <TrapIntegerDividesOptimization>false</TrapIntegerDividesOptimization>
+      <PreschedulingOptimization>false</PreschedulingOptimization>
+      <InlineAssemblyOptimization>false</InlineAssemblyOptimization>
+      <WholeProgramOptimization>true</WholeProgramOptimization>
+      <RegisterReservation>false</RegisterReservation>
+      <AnalyzeStalls>false</AnalyzeStalls>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+      <ExceptionHandling>false</ExceptionHandling>
+      <BufferSecurityCheck>false</BufferSecurityCheck>
+    </ClCompile>
+    <Link>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+      <ProgramDatabaseFile>$(OutDir)$(ProjectName).pdb</ProgramDatabaseFile>
+      <SetChecksum>true</SetChecksum>
+      <AdditionalDependencies>xapilib.lib;d3d9ltcg.lib;d3dx9.lib;xgraphics.lib;xboxkrnl.lib;xnet.lib;xaudio2.lib;xact3ltcg.lib;x3daudioltcg.lib;xmcoreltcg.lib;vcomp.lib;xhttp.lib</AdditionalDependencies>
+      <ModuleDefinitionFile>
+      </ModuleDefinitionFile>
+      <AdditionalLibraryDirectories>..\src\xkelib;</AdditionalLibraryDirectories>
+      <EntryPointSymbol>
+      </EntryPointSymbol>
+      <FixedBaseAddress>
+      </FixedBaseAddress>
+      <StackCommitSize>393216</StackCommitSize>
+      <AdditionalOptions>/dll /ALIGN:128,4096 %(AdditionalOptions)</AdditionalOptions>
+      <BaseAddress>
+      </BaseAddress>
+      <LinkTimeCodeGeneration>UseLinkTimeCodeGeneration</LinkTimeCodeGeneration>
+    </Link>
+    <ImageXex>
+      <ConfigurationFile>..\src\Engine.xml</ConfigurationFile>
+      <RequireFullExperience>false</RequireFullExperience>
+    </ImageXex>
+    <Deploy>
+      <DeploymentType>CopyToHardDrive</DeploymentType>
+      <ExcludedFromBuild>true</ExcludedFromBuild>
+    </Deploy>
+    <PostBuildEvent>
+      <Command>
+      </Command>
+    </PostBuildEvent>
+    <CustomBuildStep>
+      <Command>"$(ProjectDir)StringEncryptor.exe" "$(ImageXexOutput)"</Command>
+      <Outputs>$(ImageFileName)</Outputs>
+    </CustomBuildStep>
+  </ItemDefinitionGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+</Project>

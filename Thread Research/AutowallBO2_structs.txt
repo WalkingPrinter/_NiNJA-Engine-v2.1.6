@@ -1,0 +1,122 @@
+struct trace_t {
+	vec3 normal; // 0x0
+	char padding[4]; // 0xC
+	float fraction; // 0x10
+	int surfaceType; // 0x14
+	int surfaceFlags; // 0x18
+	int hitType; // 0x1C
+	short hitId; // 0x20
+	short modelIndex; // 0x22
+	short boneIndex; // 0x24
+	short partName; // 0x26
+	short partGroup; // 0x28
+	bool allsolid; // 0x2A
+	bool startsolid; // 0x2B
+	bool walkable; // 0x2C
+	int hitPartition; // 0x30
+};
+
+struct BulletTraceResults {
+	trace_t trace; // 0x0
+	char padding[0xC]; // 0x30
+	int hitEnt; // 0x40
+	vec3 hitPos; // 0x44
+	bool ignoreHitEnt; // 0x50
+	int surfaceType; // 0x54
+	char padding2[8]; // 0x58
+};
+
+struct BulletFireParams {
+	int weaponEntIndex; // 0x0
+	int ignoreEntIndex; // 0x4
+	float damageMultiplier; // 0x8
+	meansOfDeath_t methodOfDeath; // 0xC
+	vec3 origStart; // 0x10
+	vec3 start; // 0x1C
+	vec3 end; // 0x28
+	vec3 dir; // 0x34
+};
+
+
+namespace definitions {
+	namespace BG_ {
+		bool (*BG_IsDualWield)(int weaponId) = (bool(*)(int))0x826C1EB8;
+		
+		bool (*BG_WeaponHasPerk)(int weaponId, int perkId) = (bool(*)(int, int))0x82691798;
+		bool (*BG_AdvanceTrace)(BulletFireParams* bp, BulletTraceResults* br, float dist) = (bool(*)(BulletFireParams*, BulletTraceResults*, float))0x826B0148;
+
+		int (*BG_GetWeaponIndexForName)(char* weaponName) = (int(*)(char*))0x826C06E8;
+
+		float (*BG_Random)(int* seed) = (float(*)(int*))0x82696250;
+		float (*BG_GetSurfacePenetrationDepth)(int type, int surfaceType) = (float(*)(int, int))0x826B0278;
+
+		weaponDef_s* (*BG_GetWeaponDef)(int weaponId) = (weaponDef_s*(*)(int))0x826BF988;
+		weaponVarientDef_s* (*BG_GetWeaponVarientDef)(int weaponId) = (weaponVarientDef_s*(*)(int))0x826BF970;
+
+		void (*BG_SeedRandWithGameTime)(int* seed) = (void(*)(int*))0x826961B8;
+		void (*BG_GetPlayerViewOrigin)(playerState_s* ps, vec3& origin, int time) = (void(*)(playerState_s*, vec3&, int))0x82690C70;
+		void (*BG_GetSpreadForWeapon)(playerState_s* ps, int weaponId, float* min, float* max)
+			= (void(*)(playerState_s*, int, float*, float*))0x826BB4E0;
+	}
+
+	namespace Cbuf_ {
+		void (*Cbuf_AddText)(int localClientNum, char* command) = (void(*)(int, char*))0x824015E0;
+	}
+
+	namespace CG_ {
+		bool (*CG_DObjGetWorldTagPos)(centity_s* cent, int DObj, short tagName, vec3& pos) = (bool(*)(centity_s*, int, short, vec3&))0x821D03F0;
+		
+		void (*CG_LocationalTrace)(trace_t* results, vec3& start, vec3& end, int entNum, int contentMask, bool checkRopes, int context)
+			= (void(*)(trace_t*, vec3&, vec3&, int, int, bool, int))0x8225C568;
+
+		void (*CG_DrawRotatedPicPhysical)(int scrPlace, float x, float y, float width, float height, float angle, colors& color, material_s* material)
+			= (void(*)(int, float, float, float, float, float, colors&, material_s*))0x821C7F58;
+
+		void (*CG_DrawGrenadePointer)(int localClientNum, float centerX, float centerY, vec3& grenadeOffset, colors& color, float radiusOffset, float scaleFactor)
+			= (void(*)(int, float, float, vec3&, colors&, float, float))0x821BE100;
+	}
+
+	namespace CL_ {
+		bool (*CL_ReadyToSendPacket)(int localClientNum) = (bool(*)(int))0x8225E930;
+
+		void (*CL_WritePacket)(int localClientNum) = (void(*)(int))0x8226C9C8;
+
+		void (*CL_AddReliableCommand)(int localClientNum, char* command) = (void(*)(int, char*))0x822786E0;
+	}
+
+	namespace R_ {
+		int (*R_TextWidth)(int localClientNum, char* text, int maxChars, font_s* font) = (int(*)(int, char*, int, font_s*))0x828B6FD8;
+
+		font_s* (*R_RegisterFont)(char* fontName, int imageTrack) = (font_s*(*)(char*, int))0x82275F78;
+
+		void (*R_AddCmdDrawText)(char* text, int maxChars, font_s* font, float x, float y, float xScale, float yScale, float rotation, colors& color, int style)
+			= (void(*)(char*, int, font_s*, float, float, float, float, float, colors&, int))0x828B8BA0;
+
+		void (*R_AddCmdDrawStretchPic)(float x, float y, float w, float h, float s0, float t0, float s1, float t1, colors& color, material_s* material)
+			= (void(*)(float, float, float, float, float, float, float, float, colors&, material_s*))0x828B86C0;
+
+		void (*R_AddCmdDrawStretchPicRotateXY)(float x, float y, float w, float h, float s0, float t0, float s1, float t1, float angle, colors& color, material_s* material)
+			= (void(*)(float, float, float, float, float, float, float, float, float, colors&, material_s*))0x828B8718;
+	}
+
+	namespace misc {
+		bool (*BulletTrace)(int localClientNum, BulletFireParams* bp, centity_s* attacker, BulletTraceResults* br, int lastSurfaceType, bool simulated)
+			= (bool(*)(int, BulletFireParams*, centity_s*, BulletTraceResults*, int, bool))0x8224CDA8;
+
+		short (*Trace_GetEntityHitId)(trace_t* trace) = (short(*)(trace_t*))0x823F7160;
+
+		char* (*va)(char* fmt, ...) = (char*(*)(char*, ...))0x8249E440;
+		char* (*SEH_StringEd_GetString)(char* refrence) = (char*(*)(char*))0x82442F68;
+
+		int (*GScr_AllocString)(char* stringName) = (int(*)(char*))0x823599E0;
+		int (*Com_GetClientDObj)(int handle, int localClientNum) = (int(*)(int, int))0x82414578;
+
+		float (*G_GetWeaponHitLocationMultiplier)(hitLocation_t loc, int weaponId) = (float(*)(hitLocation_t, int))0x82325490;
+
+		material_s* (*Material_RegisterHandle)(char* materialName, int imageTrack, bool errorIfMissing, int waitTime)
+			= (material_s*(*)(char*, int, bool, int))0x828B78F0;
+
+		void (*AnglesToAxis)(vec3& viewAngles, float* outVec[]) = (void(*)(vec3&, float* outVec[3]))0x8248E540;
+		void (*AngleVectors)(vec3& angles, vec3& forward, vec3& right, vec3& up) = (void(*)(vec3&, vec3&, vec3&, vec3&))0x8248E408;
+	}
+}
